@@ -13,10 +13,10 @@ function Get-AuditEvents {
     PS> Get-AuditEvents
 
     .NOTES
-        Version:    1.0
+        Version:    1.1
         Author:     C. Bodett
-        Creation Date: 1/21/2026
-        Purpose/Change: initial module development
+        Creation Date: 1/22/2026
+        Purpose/Change: adjusted xml filter to include logon failures
     #>
     [Cmdletbinding()]
     param (
@@ -48,11 +48,11 @@ function Get-AuditEvents {
     <Select Path="Security">
         *[System[TimeCreated[@SystemTime >= '$StartTime']]]
         and
-        *[System[(EventID=4624)]
-        and
-        EventData[Data[@Name='LogonType'] and (Data='2' or Data='11' or Data='10')]
+        *[System[(EventID=4624 or EventID=4625)]
         and
         EventData[Data[@Name='ProcessName'] = 'C:\Windows\System32\svchost.exe']
+        and
+        EventData[Data[@Name='LogonGUID'] != '{00000000-0000-0000-0000-000000000000}']
         ]
     </Select>
     <Select Path="Security">
@@ -90,7 +90,7 @@ function Get-AuditEvents {
             }
             1074 {# System Shutdown
                 $EventName = "Computer Shutdown"
-                $EventDetails = 'Process:{0}, User:{1}, App:{2}, Comment:{3}' -f $EventLogProperties.param1, $EventLogProperties.param7, $EventLogProperties.param3, $EventLogProperties.param6
+                $EventDetails = 'Process:{0}; User:{1}; App:{2}; Comment:{3}' -f $EventLogProperties.param1, $EventLogProperties.param7, $EventLogProperties.param3, $EventLogProperties.param6
                 $LogonId = $null
             }
             4800 {# Workstation locked
@@ -107,10 +107,45 @@ function Get-AuditEvents {
                 $EventName = "User Logged On"
                 $LogonType = switch ($EventLogProperties.LogonType) {
                     2 {"Interactive"}
-                    11 {"CachedInteractive"}
+                    3 {"Network"}
+                    4 {"Batch"}
+                    5 {"Service"}
+                    7 {"Unlock"}
+                    8 {"NetworkClearText"}
                     10 {"RemoteDesktop"}
+                    11 {"CachedInteractive"}
                 }
-                $EventDetails = 'User:{0}, LogonType:{1}' -f $EventLogProperties.TargetUserName, $LogonType
+                $EventDetails = 'User:{0}; LogonType:{1}; IPAddress:{2}' -f $EventLogProperties.TargetUserName, $LogonType, $EventLogProperties.IpAddress
+                $LogonId = $EventLogProperties.TargetLogonId
+            }
+            4625 {# User logon failed
+                $EventName = "User Logon Failed"
+                $LogonType = switch ($EventLogProperties.LogonType) {
+                    2 {"Interactive"}
+                    3 {"Network"}
+                    4 {"Batch"}
+                    5 {"Service"}
+                    7 {"Unlock"}
+                    8 {"NetworkClearText"}
+                    10 {"RemoteDesktop"}
+                    11 {"CachedInteractive"}
+                }
+                $FailureStatus = switch ($EventLogProperties.SubStatus) {
+                    "0xC0000064" { "The user name does not exist." }
+                    "0xC000006A" { "The user name is correct, but the password is incorrect." }
+                    "0xC0000234" { "The user account is currently locked out." }
+                    "0xC0000072" { "The account is currently disabled." }
+                    "0xC000006F" { "The user attempted to log on outside allowed hours." }
+                    "0xC0000070" { "Workstation restriction or auth policy silo violation." }
+                    "0xC0000193" { "The account has expired." }
+                    "0xC0000071" { "The password has expired." }
+                    "0xC0000133" { "Clock skew between DC and computer." }
+                    "0xC0000224" { "User must change password at next logon." }
+                    "0xC0000225" { "Windows bug; not a security risk." }
+                    "0xC000015B" { "User not granted requested logon type." }
+                    default { "Unknown status code." }
+                }
+                $EventDetails = 'User:{0}; LogonType:{1}; FailureReason:{2}' -f $EventLogProperties.TargetUserName, $LogonType, $FailureStatus
                 $LogonId = $EventLogProperties.TargetLogonId
             }
             4647 {# User logged off
@@ -138,10 +173,10 @@ function Get-AuditEvents {
         } elseif ($LockEvent.EventId -eq "4801") {
             if ($StartLock) {
                 $TimeSpan = New-TimeSpan -Start $StartLock -End $LockEvent.Time
-                $LockEvent.Details += ', TimeSinceLock:{0:hh\:mm\:ss}' -f $Timespan
+                $LockEvent.Details += '; TimeSinceLock:{0:hh\:mm\:ss}' -f $Timespan
                 $StartLock = $null
             } else {
-                $LockEvent.Details += ', TimeSinceLock:NotFound'
+                $LockEvent.Details += '; TimeSinceLock:NotFound'
             }
         }
     }
@@ -154,10 +189,10 @@ function Get-AuditEvents {
         } elseif ($PowerEvent.EventId -eq "1074") {
             if ($Startup) {
                 $TimeSpan = New-TimeSpan -Start $Startup -End $PowerEvent.Time
-                $PowerEvent.Details += ', TimeSinceBoot:{0:hh\:mm\:ss}' -f $Timespan
+                $PowerEvent.Details += '; TimeSinceBoot:{0:hh\:mm\:ss}' -f $Timespan
                 $Startup = $null
             } else {
-                $PowerEvent.Details += ', TimeSinceBoot:NotFound'
+                $PowerEvent.Details += '; TimeSinceBoot:NotFound'
             }
         }
     }
