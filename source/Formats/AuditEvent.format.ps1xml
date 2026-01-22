@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Configuration>
+  <ViewDefinitions>
+    <View>
+      <Name>AuditEvent</Name>
+      <ViewSelectedBy>
+        <TypeName>AuditEvent</TypeName>
+      </ViewSelectedBy>
+      <TableControl>
+        <TableHeaders>
+            <TableColumnHeader>
+                <Label>Time</Label>
+            </TableColumnHeader>
+            <TableColumnHeader>
+                <Label>EventId</Label>
+            </TableColumnHeader>
+            <TableColumnHeader>
+                <Label>Event</Label>
+            </TableColumnHeader>
+            <TableColumnHeader>
+                <Label>Details</Label>
+            </TableColumnHeader>
+        </TableHeaders>
+        <TableRowEntries>
+          <TableRowEntry>
+            <TableColumnItems>
+            <TableColumnItem>
+                <PropertyName>Time</PropertyName>
+            </TableColumnItem>
+            <TableColumnItem>
+                <PropertyName>EventId</PropertyName>
+            </TableColumnItem>
+            <TableColumnItem>
+                <PropertyName>Event</PropertyName>
+            </TableColumnItem>
+            <TableColumnItem>
+                <PropertyName>Details</PropertyName>
+            </TableColumnItem>
+            </TableColumnItems>
+          </TableRowEntry>
+        </TableRowEntries>
+      </TableControl>
+    </View>
+  </ViewDefinitions>
+</Configuration>
