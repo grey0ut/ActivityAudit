@@ -13,10 +13,10 @@ function Get-AuditEvents {
     PS> Get-AuditEvents
 
     .NOTES
-        Version:    1.1
+        Version:    1.2
         Author:     C. Bodett
         Creation Date: 1/22/2026
-        Purpose/Change: adjusted xml filter to include logon failures
+        Purpose/Change: adjusted xml filter to capture logons with all 0 GUID
     #>
     [Cmdletbinding()]
     param (
@@ -51,8 +51,7 @@ function Get-AuditEvents {
         *[System[(EventID=4624 or EventID=4625)]
         and
         EventData[Data[@Name='ProcessName'] = 'C:\Windows\System32\svchost.exe']
-        and
-        EventData[Data[@Name='LogonGUID'] != '{00000000-0000-0000-0000-000000000000}']
+
         ]
     </Select>
     <Select Path="Security">
