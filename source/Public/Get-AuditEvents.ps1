@@ -51,7 +51,6 @@ function Get-AuditEvents {
         *[System[(EventID=4624 or EventID=4625)]
         and
         EventData[Data[@Name='ProcessName'] = 'C:\Windows\System32\svchost.exe']
-
         ]
     </Select>
     <Select Path="Security">
