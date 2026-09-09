@@ -9,20 +9,23 @@ function Get-AuditEvents {
     If provided will attempt to connect to a remote computer to retrieve logs using Get-WinEvent.
     .PARAMETER Timeframe
     By default will retrieve events from 1 day ago through now. Can use the Timeframe parameter to specify that the function should retrieve all matching events.
+    .PARAMETER IncludeProcesses
+    Switch parameter to trigger including processes created by users within the explorer.exe space
     .EXAMPLE
     PS> Get-AuditEvents
 
     .NOTES
-        Version:    1.2
+        Version:    2.0
         Author:     C. Bodett
-        Creation Date: 1/22/2026
-        Purpose/Change: adjusted xml filter to capture logons with all 0 GUID
+        Creation Date: 9/8/2026
+        Purpose/Change: added 'IncludeProcesses' parameter with the ability to pull Event ID 4688 for process creation
     #>
     [Cmdletbinding()]
     param (
         [string]$ComputerName = $ENV:COMPUTERNAME,
         [ValidateSet('All','Day')]
-        [string]$Timeframe = "Day"
+        [string]$Timeframe = "Day",
+        [switch]$IncludeProcesses
     )
 
     switch ($TimeFrame) {
@@ -195,5 +198,75 @@ function Get-AuditEvents {
         }
     }
 
-    $EventObjs
+    if ($IncludeProcesses) {
+        $Process = New-Object -TypeName regex -ArgumentList '^.+\\(?<Name>.+)$'
+
+        $FilterXml = @"
+            <QueryList>
+                <Query Id="0" Path="Security">
+                    <Select Path="Security">
+                    *[System[TimeCreated[@SystemTime >= '$StartTime']]]
+                    and
+                    *[System[(EventID=4688)]]
+                    and
+                    *[EventData[Data[@Name='ParentProcessName']='C:\Windows\explorer.exe']]
+                    </Select>
+                </Query>
+            </QueryList>
+"@
+        $ProcessEvents = try {
+            Get-WinEvent -ComputerName $ComputerName -FilterXml $FilterXML -ErrorAction Stop
+        } catch {
+            Write-Error $_
+            continue
+        }
+
+        $ProcessesByLogonId = @{}
+
+        foreach ($EventLog in $ProcessEvents) {
+            $Xml = [xml]$EventLog.ToXml()
+            $DataTable = @{}
+            foreach ($Data in $Xml.Event.EventData.Data) {
+                $DataTable[$Data.Name] = $Data.'#text'
+            }
+            $EventLogProperties = [PSCustomObject]$DataTable
+
+            if (-not $ProcessesByLogonId.ContainsKey($EventLogProperties.SubjectLogonId)) {
+                $ProcessesByLogonId[$EventLogProperties.SubjectLogonId] = [System.Collections.Generic.List[object]]::new()
+            }
+
+            $ProcessesByLogonId[$EventLogProperties.SubjectLogonId].Add($EventLog)
+        }
+
+        $LogonIds = $EventObjs | Where-Object {$_.EventId -eq "4624"} | Select-Object -ExpandProperty LogonId
+
+        $ProcessObjs = foreach ($LogonId in $LogonIds) {
+            if ($ProcessesByLogonId.ContainsKey($LogonId)) {
+                $LogonIdProcEvents = $ProcessesByLogonId[$LogonId]
+                foreach ($EventLog in $LogonIdProcEvents) {
+                    $Xml = [xml]$EventLog.ToXml()
+                    $DataTable = @{}
+                    foreach ($Data in $Xml.Event.EventData.Data) {
+                        $DataTable[$Data.Name] = $Data.'#text'
+                    }
+                    $EventLogProperties = [PSCustomObject]$DataTable
+                    $ProcName = $Process.Match($EventLogProperties.NewProcessName).Groups['Name'].Value
+                    $EventDetails = 'User: {0}; ProcessName: {1}; ProcessPath: {2}; CmdLine: {3}' -f $EventLogProperties.SubjectUserName, $ProcName, $EventLogProperties.NewProcessName, $EventLogProperties.CommandLine
+
+                    [PSCustomObject]@{
+                        PSTypeName = "AuditEvent"
+                        Time = $EventLog.TimeCreated
+                        EventId = $EventLog.Id
+                        Event = "ProcessEvent"
+                        LogonId = $LogonId
+                        Details = $EventDetails
+                    }
+                }
+            }
+        }
+        $TotalObjs = $($EventObjs; $ProcessObjs)
+        $TotalObjs | Sort-Object -Property Time -Descending
+    } else {
+        $EventObjs
+    }
 }
